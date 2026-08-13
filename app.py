@@ -11,6 +11,11 @@ try:
 except ImportError:
     HAS_PASTE_BUTTON = False
 
+DEFAULT_API_KEY = "AQ.Ab8RN6KUvxFTsXTeujKulc0gJ_lOH3ubIx0VgHVa5BfdelCKVw"
+
+st.set_page_config(page_title="화성여객 월급 계산기", layout="centered")
+st.title("🚌 화성여객 자동 월급 계산기")
+
 # ---------------------------------------------------------
 # 1. 화성여객 직급별 봉급표 & 일당제 통합 데이터
 # ---------------------------------------------------------
@@ -41,33 +46,43 @@ JOB_DATA = {
     },
 }
 
-st.set_page_config(page_title="화성여객 월급 계산기", layout="centered")
-st.title("🚌 화성여객 자동 월급 계산기")
+# ---------------------------------------------------------
+# 2. 사이드바 API Key 안내 및 설정
+# ---------------------------------------------------------
+st.sidebar.subheader("🔑 Gemini API Key")
+st.sidebar.info("기본 API Key가 자동으로 입력되어 있습니다.")
+sidebar_key = st.sidebar.text_input(
+    "API Key 확인/수정", value=DEFAULT_API_KEY, type="default"
+)
 
-# ---------------------------------------------------------
-# 2. 사이드바 API Key 및 조건 선택
-# ---------------------------------------------------------
-sidebar_key = st.sidebar.text_input("Gemini API Key 입력", type="password")
+st.sidebar.caption("👇 복사해서 쓸 수 있는 내 API Key")
+st.sidebar.code(DEFAULT_API_KEY, language="text")
+
 secret_key = st.secrets.get("GEMINI_API_KEY", "")
-api_key = (sidebar_key if sidebar_key else secret_key).strip()
+api_key = (
+    sidebar_key
+    if sidebar_key
+    else (secret_key if secret_key else DEFAULT_API_KEY)
+).strip()
 
+# ---------------------------------------------------------
+# 3. 메인 화면 조건 선택
+# ---------------------------------------------------------
 selected_job = st.selectbox("직급을 선택하세요", list(JOB_DATA.keys()))
 is_dual = st.checkbox("행정직/기사직 겸직 여부 (+1,800,000원)")
 
 # ---------------------------------------------------------
-# 3. 이미지 입력 영역 (클립보드 붙여넣기 중심)
+# 4. 이미지 입력 영역
 # ---------------------------------------------------------
 st.write("---")
 st.subheader("📸 근무표 / 수입·지출 이미지 업로드")
 
 pasted_image = None
 
-# 클립보드 붙여넣기 전용 큰 버튼 영역
+# 클립보드 붙여넣기 영역 (requirements.txt에 streamlit-paste-button 없을 시 안내문)
 if HAS_PASTE_BUTTON:
     st.markdown("### 📋 1단계: 복사한 이미지 바로 붙여넣기")
-    st.caption(
-        "캡처한 뒤 아래 **[📋 클립보드 이미지 붙여넣기]** 버튼을 클릭하면 파일 선택창 없이 즉시 들어옵니다!"
-    )
+    st.caption("캡처한 뒤 아래 버튼을 누르면 즉시 들어옵니다.")
 
     paste_result = pbutton(
         label="📋 클립보드 이미지 붙여넣기 (클릭 1번으로 완성)",
@@ -81,6 +96,10 @@ if HAS_PASTE_BUTTON:
         st.image(
             pasted_image, caption="✅ 붙여넣은 이미지 미리보기", width=350
         )
+else:
+    st.warning(
+        "⚠️ `1단계 클립보드 버튼`을 켜려면 GitHub의 `requirements.txt`에 `streamlit-paste-button`을 적어주세요!"
+    )
 
 st.write("")
 st.markdown("### 📁 2단계: 이미지 파일 직접 올리기 (선택사항)")
@@ -102,7 +121,7 @@ def parse_time_to_minutes(time_str):
 
 
 # ---------------------------------------------------------
-# 4. 월급 계산 및 AI 분석 로직
+# 5. 월급 계산 및 AI 분석 로직
 # ---------------------------------------------------------
 st.write("---")
 if st.button("월급 계산하기", type="primary", use_container_width=True):
@@ -189,78 +208,4 @@ if st.button("월급 계산하기", type="primary", use_container_width=True):
 
                 clean_json = (
                     response.text.replace("```json", "")
-                    .replace("```", "")
-                    .strip()
-                )
-                rows = json.loads(clean_json)
-
-                for row in rows:
-                    total_minutes += parse_time_to_minutes(
-                        row.get("time", "0:00")
-                    )
-                    total_extracted_income += int(row.get("income", 0))
-                    total_extracted_expense += int(row.get("expense", 0))
-
-        calculated_hours = total_minutes // 60
-        remaining_minutes = total_minutes % 60
-
-        if calculated_hours < 20:
-            mode_text = "일당제 (20시간 미만 근무)"
-            rule = JOB_DATA[selected_job]["daily"]
-            st.info(
-                f"💡 총 근무시간이 20시간 미만({calculated_hours}시간)이므로 **일당제 시급**이 적용됩니다."
-            )
-        else:
-            mode_text = "일반 봉급표 (20시간 이상 근무)"
-            rule = JOB_DATA[selected_job]["regular"]
-            st.success(
-                f"✅ 총 근무시간이 20시간 이상({calculated_hours}시간)이므로 **일반 봉급표 기준**이 적용됩니다."
-            )
-
-        base_salary = rule["base"]
-        if is_dual:
-            base_salary += 1800000
-
-        added_salary = 0
-        if rule["type"] in ["hourly_add", "hourly_only"]:
-            added_salary = calculated_hours * rule["rate"]
-        elif rule["type"] == "taxi_rate":
-            added_salary = int(total_extracted_income * rule["rate"])
-
-        total_gross = base_salary + added_salary
-        final_pay = total_gross + total_extracted_expense
-
-        st.caption(f"🤖 분석 성공 모델: `{successful_model}`")
-
-        col1, col2, col3 = st.columns(3)
-        col1.metric(
-            "총 운행시간",
-            f"{calculated_hours}시간 {remaining_minutes}분",
-            f"시급 계산: {calculated_hours}시간",
-        )
-        col2.metric("인식된 총 수익", f"{total_extracted_income:,} 원")
-        col3.metric("인식된 총 지출 (환급)", f"{total_extracted_expense:,} 원")
-
-        st.divider()
-
-        st.subheader("📌 상세 산정 내역")
-        st.write(f"- **선택 직급**: {selected_job}")
-        st.write(f"- **적용 조건**: {mode_text}")
-        st.write(f"- **기본급 (+겸직수당)**: {base_salary:,} 원")
-
-        if rule["type"] in ["hourly_add", "hourly_only"]:
-            st.write(
-                f"- **시급 계산**: {calculated_hours}시간 × {rule['rate']:,}원 = {added_salary:,} 원"
-            )
-        elif rule["type"] == "taxi_rate":
-            st.write(
-                f"- **택시 수입 배분액**: {total_extracted_income:,}원 × {int(rule['rate']*100)}% = {added_salary:,} 원"
-            )
-
-        st.write(f"- **급여 합계**: {total_gross:,} 원")
-        st.write(f"- **지출 전액 환급금**: +{total_extracted_expense:,} 원")
-
-        st.markdown(f"### 💰 예상 실수령액: **{final_pay:,} 원**")
-
-    except Exception as e:
-        st.error(f"❌ 연동 중 오류 발생: {e}")
+                    .replace("
