@@ -10,8 +10,8 @@ APP_VERSION = "v2.0-DEBUG (2026-08-14)"
 
 st.set_page_config(page_title="화성여객 월급 계산기", layout="centered")
 
-# 🔴 상단 버전 표시 (이 문구가 보여야 최신 코드가 적용된 것입니다)
-st.notice(f"🔍 **현재 앱 실행 버전: {APP_VERSION}**")
+# 🔵 상단 버전 표시 (st.info 로 수정 완료)
+st.info(f"🔍 **현재 앱 실행 버전: {APP_VERSION}**")
 st.title("🚌 화성여객 자동 월급 계산기")
 
 # ---------------------------------------------------------
@@ -98,7 +98,6 @@ if st.button("월급 계산하기") and uploaded_files:
     try:
         client = genai.Client(api_key=api_key)
 
-        # 사용할 모델 명시적 설정 (gemini-1.5-flash)
         TARGET_MODEL = "gemini-1.5-flash"
 
         total_minutes = 0
