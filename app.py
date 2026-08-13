@@ -3,6 +3,14 @@ import streamlit as st
 from google import genai
 from PIL import Image
 
+# 클립보드 붙여넣기 라이브러리 로드
+try:
+    from streamlit_paste_button import paste_image_button as pbutton
+
+    HAS_PASTE_BUTTON = True
+except ImportError:
+    HAS_PASTE_BUTTON = False
+
 # ---------------------------------------------------------
 # 1. 화성여객 직급별 봉급표 & 일당제 통합 데이터
 # ---------------------------------------------------------
@@ -37,7 +45,7 @@ st.set_page_config(page_title="화성여객 월급 계산기", layout="centered"
 st.title("🚌 화성여객 자동 월급 계산기")
 
 # ---------------------------------------------------------
-# 2. 사이드바 API Key 입력
+# 2. 사이드바 API Key 및 조건 선택
 # ---------------------------------------------------------
 sidebar_key = st.sidebar.text_input("Gemini API Key 입력", type="password")
 secret_key = st.secrets.get("GEMINI_API_KEY", "")
@@ -46,11 +54,39 @@ api_key = (sidebar_key if sidebar_key else secret_key).strip()
 selected_job = st.selectbox("직급을 선택하세요", list(JOB_DATA.keys()))
 is_dual = st.checkbox("행정직/기사직 겸직 여부 (+1,800,000원)")
 
-uploaded_files = st.file_uploader(
-    "근무표 / 수입 지출 사진을 올려주세요 (여러 장 가능)",
-    type=["png", "jpg", "jpeg"],
-    accept_multiple_files=True,
+# ---------------------------------------------------------
+# 3. 이미지 입력 영역 (Ctrl+V 및 파일 업로드)
+# ---------------------------------------------------------
+st.write("---")
+st.subheader("📸 근무표 / 수입·지출 이미지 입력")
+st.info(
+    "💡 **`Ctrl + V` 붙여넣기 안내**: 아래 '파일 선택' 영역을 클릭한 후 **`Ctrl + V`**를 누르면 복사한 이미지가 즉시 업로드됩니다!"
 )
+
+col1, col2 = st.columns([3, 2])
+
+with col1:
+    uploaded_files = st.file_uploader(
+        "📁 파일 선택 또는 클릭 후 Ctrl+V",
+        type=["png", "jpg", "jpeg"],
+        accept_multiple_files=True,
+        help="이 영역을 한번 클릭하고 Ctrl+V를 누르면 클립보드의 이미지가 첨부됩니다.",
+    )
+
+pasted_image = None
+with col2:
+    if HAS_PASTE_BUTTON:
+        st.caption("📋 클립보드 직접 불러오기")
+        paste_result = pbutton(
+            label="📋 이미지 붙여넣기 (Ctrl+V)",
+            text_color="#ffffff",
+            background_color="#2980b9",
+            hover_background_color="#3498db",
+            key="paste_image_btn",
+        )
+        if paste_result.image_data is not None:
+            pasted_image = paste_result.image_data
+            st.image(pasted_image, caption="✅ 붙여넣은 이미지", width=200)
 
 
 def parse_time_to_minutes(time_str):
@@ -64,9 +100,28 @@ def parse_time_to_minutes(time_str):
 
 
 # ---------------------------------------------------------
-# 3. 월급 계산 및 AI 분석 로직
+# 4. 월급 계산 및 AI 분석 로직
 # ---------------------------------------------------------
-if st.button("월급 계산하기") and uploaded_files:
+st.write("---")
+if st.button("월급 계산하기", type="primary", use_container_width=True):
+    images_to_process = []
+
+    if uploaded_files:
+        for f in uploaded_files:
+            try:
+                images_to_process.append(Image.open(f))
+            except Exception:
+                pass
+
+    if pasted_image is not None:
+        images_to_process.append(pasted_image)
+
+    if not images_to_process:
+        st.warning(
+            "⚠️ 분석할 이미지를 업로드하거나 Ctrl+V로 붙여넣어 주세요."
+        )
+        st.stop()
+
     if not api_key:
         st.error(
             "⚠️ API Key가 입력되지 않았습니다. 사이드바에 API 키를 붙여넣어 주세요."
@@ -76,7 +131,6 @@ if st.button("월급 계산하기") and uploaded_files:
     try:
         client = genai.Client(api_key=api_key)
 
-        # 💡 안정적인 Gemini 모델 후보군 (순차적 시도)
         candidate_models = [
             "gemini-2.0-flash",
             "gemini-2.0-flash-exp",
@@ -84,7 +138,6 @@ if st.button("월급 계산하기") and uploaded_files:
             "gemini-1.5-pro",
         ]
 
-        # 사용자 키에서 조회되는 추가 모델도 후보에 삽입
         try:
             from_api = [
                 m.name.replace("models/", "") for m in client.models.list()
@@ -111,14 +164,11 @@ if st.button("월급 계산하기") and uploaded_files:
         """
 
         with st.spinner("이미지 분석 및 월급 계산 중..."):
-            for file in uploaded_files:
-                image = Image.open(file)
-
+            for image in images_to_process:
                 response = None
                 successful_model = None
                 last_error = None
 
-                # 사용 가능한 모델을 만날 때까지 자동으로 시도
                 for model_name in candidate_models:
                     try:
                         res = client.models.generate_content(
