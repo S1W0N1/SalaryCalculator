@@ -8,42 +8,92 @@ from PIL import Image
 # ---------------------------------------------------------
 JOB_DATA = {
     "중형기사 (버스)": {
-        "regular": {"type": "hourly_add", "base": 1600000, "rate": 190000},
-        "daily": {"type": "hourly_only", "base": 0, "rate": 190000},
+        "regular": {
+            "type": "hourly_add",
+            "base": 1600000,
+            "rate": 190000,
+        },  # 20시간 이상
+        "daily": {
+            "type": "hourly_only",
+            "base": 0,
+            "rate": 190000,
+        },  # 20시간 미만
     },
     "대형기사 (버스)": {
-        "regular": {"type": "hourly_add", "base": 2300000, "rate": 200000},
-        "daily": {"type": "hourly_only", "base": 0, "rate": 210000},
+        "regular": {
+            "type": "hourly_add",
+            "base": 2300000,
+            "rate": 200000,
+        },  #
+        "daily": {
+            "type": "hourly_only",
+            "base": 0,
+            "rate": 210000,
+        },  #
     },
     "일반기사 (택시)": {
-        "regular": {"type": "taxi_rate", "base": 3375000, "rate": 0.60},
-        "daily": {"type": "hourly_only", "base": 0, "rate": 190000},
+        "regular": {
+            "type": "taxi_rate",
+            "base": 3375000,
+            "rate": 0.60,
+        },  #
+        "daily": {
+            "type": "hourly_only",
+            "base": 0,
+            "rate": 190000,
+        },  #
     },
     "블랙기사 (택시)": {
-        "regular": {"type": "taxi_rate", "base": 4100000, "rate": 0.70},
-        "daily": {"type": "hourly_only", "base": 0, "rate": 210000},
+        "regular": {
+            "type": "taxi_rate",
+            "base": 4100000,
+            "rate": 0.70,
+        },  #
+        "daily": {
+            "type": "hourly_only",
+            "base": 0,
+            "rate": 210000,
+        },  #
     },
     "과장 (운영본부)": {
-        "regular": {"type": "hourly_add", "base": 3200000, "rate": 210000},
-        "daily": {"type": "hourly_only", "base": 0, "rate": 220000},
+        "regular": {
+            "type": "hourly_add",
+            "base": 3200000,
+            "rate": 210000,
+        },  #
+        "daily": {
+            "type": "hourly_only",
+            "base": 0,
+            "rate": 220000,
+        },  #
     },
     "부장": {
-        "regular": {"type": "hourly_add", "base": 3900000, "rate": 225000},
-        "daily": {"type": "hourly_only", "base": 0, "rate": 235000},
+        "regular": {
+            "type": "hourly_add",
+            "base": 3900000,
+            "rate": 225000,
+        },  #
+        "daily": {
+            "type": "hourly_only",
+            "base": 0,
+            "rate": 235000,
+        },  #
     },
 }
 
 st.set_page_config(page_title="화성여객 월급 계산기", layout="centered")
 st.title("🚌 화성여객 자동 월급 계산기")
 
-# 사이드바 입력값 최우선, 없으면 Secrets 키 사용
+# 사이드바 입력값 최우선 사용, 없으면 Secrets 키 사용
 sidebar_key = st.sidebar.text_input("Gemini API Key 입력", type="password")
 secret_key = st.secrets.get("GEMINI_API_KEY", "")
 
 api_key = (sidebar_key if sidebar_key else secret_key).strip()
 
 selected_job = st.selectbox("직급을 선택하세요", list(JOB_DATA.keys()))
-is_dual = st.checkbox("행정직/기사직 겸직 여부 (+1,800,000원)")
+is_dual = st.checkbox(
+    "행정직/기사직 겸직 여부 (+1,800,000원)"
+)  #
 
 uploaded_files = st.file_uploader(
     "근무표 / 수입 지출 사진을 올려주세요 (여러 장 가능)",
@@ -62,6 +112,18 @@ def parse_time_to_minutes(time_str):
         return 0
 
 
+def get_usable_model_name(client):
+    """현재 발급된 API 키에서 사용 가능한 Flash 모델 자동 찾기"""
+    try:
+        for m in client.models.list():
+            clean_name = m.name.replace("models/", "")
+            if "flash" in clean_name.lower():
+                return clean_name
+    except Exception:
+        pass
+    return "gemini-2.0-flash"
+
+
 if st.button("월급 계산하기") and uploaded_files:
     if not api_key:
         st.error(
@@ -71,11 +133,17 @@ if st.button("월급 계산하기") and uploaded_files:
 
     try:
         client = genai.Client(api_key=api_key)
+
+        # 지원 가능한 모델 자동 감지
+        target_model = get_usable_model_name(client)
+
         total_minutes = 0
         total_extracted_income = 0
         total_extracted_expense = 0
 
-        with st.spinner("이미지 분석 및 계산 중..."):
+        with st.spinner(
+            f"이미지 분석 및 계산 중... (연동 모델: {target_model})"
+        ):
             for file in uploaded_files:
                 image = Image.open(file)
 
@@ -90,9 +158,8 @@ if st.button("월급 계산하기") and uploaded_files:
                 ]
                 """
 
-                # 모델명을 안정적인 gemini-1.5-flash 로 수정
                 response = client.models.generate_content(
-                    model="gemini-1.5-flash", contents=[image, prompt]
+                    model=target_model, contents=[image, prompt]
                 )
 
                 clean_json = (
@@ -127,7 +194,7 @@ if st.button("월급 계산하기") and uploaded_files:
 
         base_salary = rule["base"]
         if is_dual:
-            base_salary += 1800000
+            base_salary += 1800000  #
 
         added_salary = 0
         if rule["type"] in ["hourly_add", "hourly_only"]:
