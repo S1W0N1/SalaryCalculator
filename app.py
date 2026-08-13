@@ -50,7 +50,7 @@ JOB_DATA = {
 # 2. 사이드바 API Key 안내 및 설정
 # ---------------------------------------------------------
 st.sidebar.subheader("🔑 Gemini API Key")
-st.sidebar.info("기본 API Key가 자동으로 입력되어 있습니다.")
+st.sidebar.info("기본 API Key가 자동으로 적용되어 있습니다.")
 sidebar_key = st.sidebar.text_input(
     "API Key 확인/수정", value=DEFAULT_API_KEY, type="default"
 )
@@ -79,7 +79,6 @@ st.subheader("📸 근무표 / 수입·지출 이미지 업로드")
 
 pasted_image = None
 
-# 클립보드 붙여넣기 영역 (requirements.txt에 streamlit-paste-button 없을 시 안내문)
 if HAS_PASTE_BUTTON:
     st.markdown("### 📋 1단계: 복사한 이미지 바로 붙여넣기")
     st.caption("캡처한 뒤 아래 버튼을 누르면 즉시 들어옵니다.")
@@ -116,7 +115,7 @@ def parse_time_to_minutes(time_str):
         hours = int(parts[0])
         minutes = int(parts[1]) if len(parts) > 1 else 0
         return hours * 60 + minutes
-    except:
+    except Exception:
         return 0
 
 
