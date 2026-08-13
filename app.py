@@ -84,7 +84,7 @@ JOB_DATA = {
 st.set_page_config(page_title="화성여객 월급 계산기", layout="centered")
 st.title("🚌 화성여객 자동 월급 계산기")
 
-# API 키 설정 (웹 설정 비밀키가 있으면 자동 연결, 없으면 사이드바에서 받음)
+# Secrets에 등록된 API 키를 읽어오고, 없으면 사이드바에서 입력
 secret_key = st.secrets.get("GEMINI_API_KEY", "")
 if secret_key:
     api_key = secret_key
@@ -115,7 +115,7 @@ def parse_time_to_minutes(time_str):
 
 if st.button("월급 계산하기") and uploaded_files:
     if not api_key:
-        st.error("Gemini API Key를 입력해 주세요.")
+        st.error("Gemini API Key를 먼저 설정하거나 입력해 주세요.")
         st.stop()
 
     client = genai.Client(api_key=api_key)
@@ -138,8 +138,9 @@ if st.button("월급 계산하기") and uploaded_files:
             ]
             """
 
+            # 가장 안정적인 gemini-1.5-flash 모델 적용
             response = client.models.generate_content(
-                model="gemini-2.5-flash", contents=[image, prompt]
+                model="gemini-1.5-flash", contents=[image, prompt]
             )
 
             clean_json = (
@@ -154,9 +155,11 @@ if st.button("월급 계산하기") and uploaded_files:
                 total_extracted_income += int(row.get("income", 0))
                 total_extracted_expense += int(row.get("expense", 0))
 
-    calculated_hours = total_minutes // 60  # '분' 절사
+    # '분'은 절사하고 정수 '시간'만 계산
+    calculated_hours = total_minutes // 60
     remaining_minutes = total_minutes % 60
 
+    # 20시간 미만 조건 판별
     if calculated_hours < 20:
         mode_text = "일당제 (20시간 미만 근무)"
         rule = JOB_DATA[selected_job]["daily"]
@@ -180,8 +183,9 @@ if st.button("월급 계산하기") and uploaded_files:
     elif rule["type"] == "taxi_rate":
         added_salary = int(total_extracted_income * rule["rate"])
 
+    # 지출은 전액 환급되므로 더해줌(+)
     total_gross = base_salary + added_salary
-    final_pay = total_gross + total_extracted_expense  # 지출 전액 환급(+)
+    final_pay = total_gross + total_extracted_expense
 
     col1, col2, col3 = st.columns(3)
     col1.metric(
