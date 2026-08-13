@@ -76,19 +76,14 @@ if st.button("월급 계산하기") and uploaded_files:
     try:
         client = genai.Client(api_key=api_key)
 
-        # 💡 사용자 키에서 지원하는 실제 모델 자동 선택
-        all_models = [m.name for m in client.models.list()]
-        # flash 지원 모델 우선 선택, 없으면 첫번째 모델 선택
-        target_model = next(
-            (m for m in all_models if "flash" in m and "tts" not in m),
-            all_models[0],
-        )
+        # 🎯 정상 동작하는 gemini-2.5-pro 모델로 고정 지정
+        TARGET_MODEL = "gemini-2.5-pro"
 
         total_minutes = 0
         total_extracted_income = 0
         total_extracted_expense = 0
 
-        with st.spinner(f"이미지 분석 및 계산 중... (적용 모델: {target_model})"):
+        with st.spinner(f"이미지 분석 및 계산 중... (적용 모델: {TARGET_MODEL})"):
             for file in uploaded_files:
                 image = Image.open(file)
 
@@ -104,7 +99,7 @@ if st.button("월급 계산하기") and uploaded_files:
                 """
 
                 response = client.models.generate_content(
-                    model=target_model, contents=[image, prompt]
+                    model=TARGET_MODEL, contents=[image, prompt]
                 )
 
                 clean_json = (
