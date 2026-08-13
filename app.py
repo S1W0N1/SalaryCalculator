@@ -84,12 +84,13 @@ JOB_DATA = {
 st.set_page_config(page_title="화성여객 월급 계산기", layout="centered")
 st.title("🚌 화성여객 자동 월급 계산기")
 
-# Secrets에 등록된 API 키를 읽어오고, 없으면 사이드바에서 입력
+# 사이드바 입력값을 최우선 사용하고, 없으면 Secrets 키 사용
+sidebar_key = st.sidebar.text_input(
+    "Gemini API Key 입력 (AIzaSy...)", type="password"
+)
 secret_key = st.secrets.get("GEMINI_API_KEY", "")
-if secret_key:
-    api_key = secret_key
-else:
-    api_key = st.sidebar.text_input("Gemini API Key 입력", type="password")
+
+api_key = sidebar_key if sidebar_key else secret_key
 
 selected_job = st.selectbox("직급을 선택하세요", list(JOB_DATA.keys()))
 is_dual = st.checkbox(
@@ -114,8 +115,10 @@ def parse_time_to_minutes(time_str):
 
 
 if st.button("월급 계산하기") and uploaded_files:
-    if not api_key:
-        st.error("Gemini API Key를 먼저 설정하거나 입력해 주세요.")
+    if not api_key or not api_key.startswith("AIzaSy"):
+        st.error(
+            "⚠️ 올바른 Gemini API Key가 아닙니다. 사이드바에 'AIzaSy'로 시작하는 진짜 API 키를 입력해 주세요."
+        )
         st.stop()
 
     client = genai.Client(api_key=api_key)
@@ -138,7 +141,6 @@ if st.button("월급 계산하기") and uploaded_files:
             ]
             """
 
-            # 가장 안정적인 gemini-1.5-flash 모델 적용
             response = client.models.generate_content(
                 model="gemini-1.5-flash", contents=[image, prompt]
             )
@@ -155,11 +157,9 @@ if st.button("월급 계산하기") and uploaded_files:
                 total_extracted_income += int(row.get("income", 0))
                 total_extracted_expense += int(row.get("expense", 0))
 
-    # '분'은 절사하고 정수 '시간'만 계산
     calculated_hours = total_minutes // 60
     remaining_minutes = total_minutes % 60
 
-    # 20시간 미만 조건 판별
     if calculated_hours < 20:
         mode_text = "일당제 (20시간 미만 근무)"
         rule = JOB_DATA[selected_job]["daily"]
@@ -183,7 +183,6 @@ if st.button("월급 계산하기") and uploaded_files:
     elif rule["type"] == "taxi_rate":
         added_salary = int(total_extracted_income * rule["rate"])
 
-    # 지출은 전액 환급되므로 더해줌(+)
     total_gross = base_salary + added_salary
     final_pay = total_gross + total_extracted_expense
 
