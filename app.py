@@ -4,18 +4,7 @@ from google import genai
 from PIL import Image
 
 # ---------------------------------------------------------
-# 0. 진단 및 버전 정보
-# ---------------------------------------------------------
-APP_VERSION = "v2.0-DEBUG (2026-08-14)"
-
-st.set_page_config(page_title="화성여객 월급 계산기", layout="centered")
-
-# 🔵 상단 버전 표시 (st.info 로 수정 완료)
-st.info(f"🔍 **현재 앱 실행 버전: {APP_VERSION}**")
-st.title("🚌 화성여객 자동 월급 계산기")
-
-# ---------------------------------------------------------
-# 1. 직급별 데이터
+# 1. 화성여객 직급별 봉급표 & 일당제 통합 데이터
 # ---------------------------------------------------------
 JOB_DATA = {
     "중형기사 (버스)": {
@@ -44,27 +33,16 @@ JOB_DATA = {
     },
 }
 
+st.set_page_config(page_title="화성여객 월급 계산기", layout="centered")
+st.title("🚌 화성여객 자동 월급 계산기")
+
 # ---------------------------------------------------------
-# 2. 사이드바 키 입력 및 모델 상태 진단 도구
+# 2. 사이드바 API Key 입력
 # ---------------------------------------------------------
 sidebar_key = st.sidebar.text_input("Gemini API Key 입력", type="password")
 secret_key = st.secrets.get("GEMINI_API_KEY", "")
 api_key = (sidebar_key if sidebar_key else secret_key).strip()
 
-with st.sidebar.expander("🛠️ API 모델 지원 상태 진단"):
-    if st.button("내 API 키로 사용 가능한 모델 목록 조회"):
-        if not api_key:
-            st.warning("API 키를 먼저 입력해 주세요.")
-        else:
-            try:
-                client = genai.Client(api_key=api_key)
-                models_list = [m.name for m in client.models.list()]
-                st.success("연동 성공! 지원 모델 목록:")
-                st.json(models_list)
-            except Exception as diag_e:
-                st.error(f"조회 실패: {diag_e}")
-
-# 메인 화면 선택 UI
 selected_job = st.selectbox("직급을 선택하세요", list(JOB_DATA.keys()))
 is_dual = st.checkbox("행정직/기사직 겸직 여부 (+1,800,000원)")
 
@@ -86,7 +64,7 @@ def parse_time_to_minutes(time_str):
 
 
 # ---------------------------------------------------------
-# 3. 월급 계산 로직
+# 3. 월급 계산 및 AI 분석 로직
 # ---------------------------------------------------------
 if st.button("월급 계산하기") and uploaded_files:
     if not api_key:
@@ -98,15 +76,19 @@ if st.button("월급 계산하기") and uploaded_files:
     try:
         client = genai.Client(api_key=api_key)
 
-        TARGET_MODEL = "gemini-1.5-flash"
+        # 💡 사용자 키에서 지원하는 실제 모델 자동 선택
+        all_models = [m.name for m in client.models.list()]
+        # flash 지원 모델 우선 선택, 없으면 첫번째 모델 선택
+        target_model = next(
+            (m for m in all_models if "flash" in m and "tts" not in m),
+            all_models[0],
+        )
 
         total_minutes = 0
         total_extracted_income = 0
         total_extracted_expense = 0
 
-        st.info(f"⚙️ 호출 시도 중인 모델: `{TARGET_MODEL}`")
-
-        with st.spinner("이미지 분석 및 계산 중..."):
+        with st.spinner(f"이미지 분석 및 계산 중... (적용 모델: {target_model})"):
             for file in uploaded_files:
                 image = Image.open(file)
 
@@ -122,7 +104,7 @@ if st.button("월급 계산하기") and uploaded_files:
                 """
 
                 response = client.models.generate_content(
-                    model=TARGET_MODEL, contents=[image, prompt]
+                    model=target_model, contents=[image, prompt]
                 )
 
                 clean_json = (
