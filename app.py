@@ -8,94 +8,42 @@ from PIL import Image
 # ---------------------------------------------------------
 JOB_DATA = {
     "중형기사 (버스)": {
-        "regular": {
-            "type": "hourly_add",
-            "base": 1600000,
-            "rate": 190000,
-        },  # 20시간 이상[cite: 1]
-        "daily": {
-            "type": "hourly_only",
-            "base": 0,
-            "rate": 190000,
-        },  # 20시간 미만[cite: 1]
+        "regular": {"type": "hourly_add", "base": 1600000, "rate": 190000},
+        "daily": {"type": "hourly_only", "base": 0, "rate": 190000},
     },
     "대형기사 (버스)": {
-        "regular": {
-            "type": "hourly_add",
-            "base": 2300000,
-            "rate": 200000,
-        },  #[cite: 1]
-        "daily": {
-            "type": "hourly_only",
-            "base": 0,
-            "rate": 210000,
-        },  #[cite: 1]
+        "regular": {"type": "hourly_add", "base": 2300000, "rate": 200000},
+        "daily": {"type": "hourly_only", "base": 0, "rate": 210000},
     },
     "일반기사 (택시)": {
-        "regular": {
-            "type": "taxi_rate",
-            "base": 3375000,
-            "rate": 0.60,
-        },  #[cite: 1]
-        "daily": {
-            "type": "hourly_only",
-            "base": 0,
-            "rate": 190000,
-        },  #[cite: 1]
+        "regular": {"type": "taxi_rate", "base": 3375000, "rate": 0.60},
+        "daily": {"type": "hourly_only", "base": 0, "rate": 190000},
     },
     "블랙기사 (택시)": {
-        "regular": {
-            "type": "taxi_rate",
-            "base": 4100000,
-            "rate": 0.70,
-        },  #[cite: 1]
-        "daily": {
-            "type": "hourly_only",
-            "base": 0,
-            "rate": 210000,
-        },  #[cite: 1]
+        "regular": {"type": "taxi_rate", "base": 4100000, "rate": 0.70},
+        "daily": {"type": "hourly_only", "base": 0, "rate": 210000},
     },
     "과장 (운영본부)": {
-        "regular": {
-            "type": "hourly_add",
-            "base": 3200000,
-            "rate": 210000,
-        },  #[cite: 1]
-        "daily": {
-            "type": "hourly_only",
-            "base": 0,
-            "rate": 220000,
-        },  #[cite: 1]
+        "regular": {"type": "hourly_add", "base": 3200000, "rate": 210000},
+        "daily": {"type": "hourly_only", "base": 0, "rate": 220000},
     },
     "부장": {
-        "regular": {
-            "type": "hourly_add",
-            "base": 3900000,
-            "rate": 225000,
-        },  #[cite: 1]
-        "daily": {
-            "type": "hourly_only",
-            "base": 0,
-            "rate": 235000,
-        },  #[cite: 1]
+        "regular": {"type": "hourly_add", "base": 3900000, "rate": 225000},
+        "daily": {"type": "hourly_only", "base": 0, "rate": 235000},
     },
 }
 
 st.set_page_config(page_title="화성여객 월급 계산기", layout="centered")
 st.title("🚌 화성여객 자동 월급 계산기")
 
-# 사이드바 입력값을 최우선 사용하고, 없으면 Secrets 키 사용
-sidebar_key = st.sidebar.text_input(
-    "Gemini API Key 입력 (AIzaSy...)", type="password"
-)
+# 사이드바 입력값 최우선, 없으면 Secrets 키 사용 (공백 자동 제거 .strip())
+sidebar_key = st.sidebar.text_input("Gemini API Key 입력", type="password")
 secret_key = st.secrets.get("GEMINI_API_KEY", "")
 
-api_key = sidebar_key if sidebar_key else secret_key
+api_key = (sidebar_key if sidebar_key else secret_key).strip()
 
 selected_job = st.selectbox("직급을 선택하세요", list(JOB_DATA.keys()))
-is_dual = st.checkbox(
-    "행정직/기사직 겸직 여부 (+1,800,000원)"
-)  #[cite: 1]
+is_dual = st.checkbox("행정직/기사직 겸직 여부 (+1,800,000원)")
 
 uploaded_files = st.file_uploader(
     "근무표 / 수입 지출 사진을 올려주세요 (여러 장 가능)",
@@ -115,103 +63,112 @@ def parse_time_to_minutes(time_str):
 
 
 if st.button("월급 계산하기") and uploaded_files:
-    if not api_key or not api_key.startswith("AIzaSy"):
+    if not api_key:
         st.error(
-            "⚠️ 올바른 Gemini API Key가 아닙니다. 사이드바에 'AIzaSy'로 시작하는 진짜 API 키를 입력해 주세요."
+            "⚠️ API Key가 입력되지 않았습니다. 사이드바에 API 키를 붙여넣어 주세요."
         )
         st.stop()
 
-    client = genai.Client(api_key=api_key)
-    total_minutes = 0
-    total_extracted_income = 0
-    total_extracted_expense = 0
+    try:
+        client = genai.Client(api_key=api_key)
+        total_minutes = 0
+        total_extracted_income = 0
+        total_extracted_expense = 0
 
-    with st.spinner("이미지 분석 및 계산 중..."):
-        for file in uploaded_files:
-            image = Image.open(file)
+        with st.spinner("이미지 분석 및 계산 중..."):
+            for file in uploaded_files:
+                image = Image.open(file)
 
-            prompt = """
-            이 이미지에서 '근무 시간', '수익', '지출' 표 데이터를 추출해줘.
-            '위에 포함' 이라는 단어가 있으면 0으로 처리해줘.
-            시간은 HH:MM 형식을 유지해줘.
-            응답은 반드시 아래 형식의 JSON 배열로만 작성해줘:
-            [
-              {"time": "2:05", "income": 276400, "expense": 126638},
-              {"time": "0:33", "income": 374700, "expense": 296294}
-            ]
-            """
+                prompt = """
+                이 이미지에서 '근무 시간', '수익', '지출' 표 데이터를 추출해줘.
+                '위에 포함' 이라는 단어가 있으면 0으로 처리해줘.
+                시간은 HH:MM 형식을 유지해줘.
+                응답은 반드시 아래 형식의 JSON 배열로만 작성해줘:
+                [
+                  {"time": "2:05", "income": 276400, "expense": 126638},
+                  {"time": "0:33", "income": 374700, "expense": 296294}
+                ]
+                """
 
-            response = client.models.generate_content(
-                model="gemini-1.5-flash", contents=[image, prompt]
+                response = client.models.generate_content(
+                    model="gemini-2.5-flash", contents=[image, prompt]
+                )
+
+                clean_json = (
+                    response.text.replace("```json", "")
+                    .replace("```", "")
+                    .strip()
+                )
+                rows = json.loads(clean_json)
+
+                for row in rows:
+                    total_minutes += parse_time_to_minutes(
+                        row.get("time", "0:00")
+                    )
+                    total_extracted_income += int(row.get("income", 0))
+                    total_extracted_expense += int(row.get("expense", 0))
+
+        calculated_hours = total_minutes // 60
+        remaining_minutes = total_minutes % 60
+
+        if calculated_hours < 20:
+            mode_text = "일당제 (20시간 미만 근무)"
+            rule = JOB_DATA[selected_job]["daily"]
+            st.info(
+                f"💡 총 근무시간이 20시간 미만({calculated_hours}시간)이므로 **일당제 시급**이 적용됩니다."
+            )
+        else:
+            mode_text = "일반 봉급표 (20시간 이상 근무)"
+            rule = JOB_DATA[selected_job]["regular"]
+            st.success(
+                f"✅ 총 근무시간이 20시간 이상({calculated_hours}시간)이므로 **일반 봉급표 기준**이 적용됩니다."
             )
 
-            clean_json = (
-                response.text.replace("```json", "")
-                .replace("```", "")
-                .strip()
+        base_salary = rule["base"]
+        if is_dual:
+            base_salary += 1800000
+
+        added_salary = 0
+        if rule["type"] in ["hourly_add", "hourly_only"]:
+            added_salary = calculated_hours * rule["rate"]
+        elif rule["type"] == "taxi_rate":
+            added_salary = int(total_extracted_income * rule["rate"])
+
+        total_gross = base_salary + added_salary
+        final_pay = total_gross + total_extracted_expense
+
+        col1, col2, col3 = st.columns(3)
+        col1.metric(
+            "총 운행시간",
+            f"{calculated_hours}시간 {remaining_minutes}분",
+            f"시급 계산: {calculated_hours}시간",
+        )
+        col2.metric("인식된 총 수익", f"{total_extracted_income:,} 원")
+        col3.metric("인식된 총 지출 (환급)", f"{total_extracted_expense:,} 원")
+
+        st.divider()
+
+        st.subheader("📌 상세 산정 내역")
+        st.write(f"- **선택 직급**: {selected_job}")
+        st.write(f"- **적용 조건**: {mode_text}")
+        st.write(f"- **기본급 (+겸직수당)**: {base_salary:,} 원")
+
+        if rule["type"] in ["hourly_add", "hourly_only"]:
+            st.write(
+                f"- **시급 계산**: {calculated_hours}시간 × {rule['rate']:,}원 = {added_salary:,} 원"
             )
-            rows = json.loads(clean_json)
+        elif rule["type"] == "taxi_rate":
+            st.write(
+                f"- **택시 수입 배분액**: {total_extracted_income:,}원 × {int(rule['rate']*100)}% = {added_salary:,} 원"
+            )
 
-            for row in rows:
-                total_minutes += parse_time_to_minutes(row.get("time", "0:00"))
-                total_extracted_income += int(row.get("income", 0))
-                total_extracted_expense += int(row.get("expense", 0))
+        st.write(f"- **급여 합계**: {total_gross:,} 원")
+        st.write(f"- **지출 전액 환급금**: +{total_extracted_expense:,} 원")
 
-    calculated_hours = total_minutes // 60
-    remaining_minutes = total_minutes % 60
+        st.markdown(f"### 💰 예상 실수령액: **{final_pay:,} 원**")
 
-    if calculated_hours < 20:
-        mode_text = "일당제 (20시간 미만 근무)"
-        rule = JOB_DATA[selected_job]["daily"]
+    except Exception as e:
+        st.error(f"❌ 연동 중 오류 발생: {e}")
         st.info(
-            f"💡 총 근무시간이 20시간 미만({calculated_hours}시간)이므로 **일당제 시급**이 적용됩니다."
+            "복사한 API 키에 따옴표나 공백이 포함되어 있지 않은지 확인해 주세요."
         )
-    else:
-        mode_text = "일반 봉급표 (20시간 이상 근무)"
-        rule = JOB_DATA[selected_job]["regular"]
-        st.success(
-            f"✅ 총 근무시간이 20시간 이상({calculated_hours}시간)이므로 **일반 봉급표 기준**이 적용됩니다."
-        )
-
-    base_salary = rule["base"]
-    if is_dual:
-        base_salary += 1800000  #[cite: 1]
-
-    added_salary = 0
-    if rule["type"] in ["hourly_add", "hourly_only"]:
-        added_salary = calculated_hours * rule["rate"]
-    elif rule["type"] == "taxi_rate":
-        added_salary = int(total_extracted_income * rule["rate"])
-
-    total_gross = base_salary + added_salary
-    final_pay = total_gross + total_extracted_expense
-
-    col1, col2, col3 = st.columns(3)
-    col1.metric(
-        "총 운행시간",
-        f"{calculated_hours}시간 {remaining_minutes}분",
-        f"시급 계산: {calculated_hours}시간",
-    )
-    col2.metric("인식된 총 수익", f"{total_extracted_income:,} 원")
-    col3.metric("인식된 총 지출 (환급)", f"{total_extracted_expense:,} 원")
-
-    st.divider()
-
-    st.subheader("📌 상세 산정 내역")
-    st.write(f"- **선택 직급**: {selected_job}")
-    st.write(f"- **적용 조건**: {mode_text}")
-    st.write(f"- **기본급 (+겸직수당)**: {base_salary:,} 원")
-
-    if rule["type"] in ["hourly_add", "hourly_only"]:
-        st.write(
-            f"- **시급 계산**: {calculated_hours}시간 × {rule['rate']:,}원 = {added_salary:,} 원"
-        )
-    elif rule["type"] == "taxi_rate":
-        st.write(
-            f"- **택시 수입 배분액**: {total_extracted_income:,}원 × {int(rule['rate']*100)}% = {added_salary:,} 원"
-        )
-
-    st.write(f"- **급여 합계**: {total_gross:,} 원")
-    st.write(f"- **지출 전액 환급금**: +{total_extracted_expense:,} 원")
-
-    st.markdown(f"### 💰 예상 실수령액: **{final_pay:,} 원**")
