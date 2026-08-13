@@ -76,31 +76,66 @@ if st.button("월급 계산하기") and uploaded_files:
     try:
         client = genai.Client(api_key=api_key)
 
-        # 🎯 정상 동작하는 gemini-2.5-pro 모델로 고정 지정
-        TARGET_MODEL = "gemini-2.5-pro"
+        # 💡 안정적인 Gemini 모델 후보군 (순차적 시도)
+        candidate_models = [
+            "gemini-2.0-flash",
+            "gemini-2.0-flash-exp",
+            "gemini-1.5-flash",
+            "gemini-1.5-pro",
+        ]
+
+        # 사용자 키에서 조회되는 추가 모델도 후보에 삽입
+        try:
+            from_api = [
+                m.name.replace("models/", "") for m in client.models.list()
+            ]
+            for m in from_api:
+                if m not in candidate_models and "tts" not in m:
+                    candidate_models.append(m)
+        except Exception:
+            pass
 
         total_minutes = 0
         total_extracted_income = 0
         total_extracted_expense = 0
 
-        with st.spinner(f"이미지 분석 및 계산 중... (적용 모델: {TARGET_MODEL})"):
+        prompt = """
+        이 이미지에서 '근무 시간', '수익', '지출' 표 데이터를 추출해줘.
+        '위에 포함' 이라는 단어가 있으면 0으로 처리해줘.
+        시간은 HH:MM 형식을 유지해줘.
+        응답은 반드시 아래 형식의 JSON 배열로만 작성해줘:
+        [
+          {"time": "2:05", "income": 276400, "expense": 126638},
+          {"time": "0:33", "income": 374700, "expense": 296294}
+        ]
+        """
+
+        with st.spinner("이미지 분석 및 월급 계산 중..."):
             for file in uploaded_files:
                 image = Image.open(file)
 
-                prompt = """
-                이 이미지에서 '근무 시간', '수익', '지출' 표 데이터를 추출해줘.
-                '위에 포함' 이라는 단어가 있으면 0으로 처리해줘.
-                시간은 HH:MM 형식을 유지해줘.
-                응답은 반드시 아래 형식의 JSON 배열로만 작성해줘:
-                [
-                  {"time": "2:05", "income": 276400, "expense": 126638},
-                  {"time": "0:33", "income": 374700, "expense": 296294}
-                ]
-                """
+                response = None
+                successful_model = None
+                last_error = None
 
-                response = client.models.generate_content(
-                    model=TARGET_MODEL, contents=[image, prompt]
-                )
+                # 사용 가능한 모델을 만날 때까지 자동으로 시도
+                for model_name in candidate_models:
+                    try:
+                        res = client.models.generate_content(
+                            model=model_name, contents=[image, prompt]
+                        )
+                        if res and res.text:
+                            response = res
+                            successful_model = model_name
+                            break
+                    except Exception as err:
+                        last_error = err
+                        continue
+
+                if not response:
+                    raise Exception(
+                        f"이용 가능한 Gemini 모델 연결에 실패했습니다. (마지막 오류: {last_error})"
+                    )
 
                 clean_json = (
                     response.text.replace("```json", "")
@@ -144,6 +179,8 @@ if st.button("월급 계산하기") and uploaded_files:
 
         total_gross = base_salary + added_salary
         final_pay = total_gross + total_extracted_expense
+
+        st.caption(f"🤖 분석 성공 모델: `{successful_model}`")
 
         col1, col2, col3 = st.columns(3)
         col1.metric(
