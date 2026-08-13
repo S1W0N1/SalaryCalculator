@@ -3,7 +3,7 @@ import streamlit as st
 from google import genai
 from PIL import Image
 
-# 클립보드 붙여넣기 라이브러리 로드
+# 클립보드 붙여넣기 라이브러리
 try:
     from streamlit_paste_button import paste_image_button as pbutton
 
@@ -55,38 +55,40 @@ selected_job = st.selectbox("직급을 선택하세요", list(JOB_DATA.keys()))
 is_dual = st.checkbox("행정직/기사직 겸직 여부 (+1,800,000원)")
 
 # ---------------------------------------------------------
-# 3. 이미지 입력 영역 (Ctrl+V 및 파일 업로드)
+# 3. 이미지 입력 영역 (클립보드 붙여넣기 중심)
 # ---------------------------------------------------------
 st.write("---")
-st.subheader("📸 근무표 / 수입·지출 이미지 입력")
-st.info(
-    "💡 **`Ctrl + V` 붙여넣기 안내**: 아래 '파일 선택' 영역을 클릭한 후 **`Ctrl + V`**를 누르면 복사한 이미지가 즉시 업로드됩니다!"
-)
-
-col1, col2 = st.columns([3, 2])
-
-with col1:
-    uploaded_files = st.file_uploader(
-        "📁 파일 선택 또는 클릭 후 Ctrl+V",
-        type=["png", "jpg", "jpeg"],
-        accept_multiple_files=True,
-        help="이 영역을 한번 클릭하고 Ctrl+V를 누르면 클립보드의 이미지가 첨부됩니다.",
-    )
+st.subheader("📸 근무표 / 수입·지출 이미지 업로드")
 
 pasted_image = None
-with col2:
-    if HAS_PASTE_BUTTON:
-        st.caption("📋 클립보드 직접 불러오기")
-        paste_result = pbutton(
-            label="📋 이미지 붙여넣기 (Ctrl+V)",
-            text_color="#ffffff",
-            background_color="#2980b9",
-            hover_background_color="#3498db",
-            key="paste_image_btn",
+
+# 클립보드 붙여넣기 전용 큰 버튼 영역
+if HAS_PASTE_BUTTON:
+    st.markdown("### 📋 1단계: 복사한 이미지 바로 붙여넣기")
+    st.caption(
+        "캡처한 뒤 아래 **[📋 클립보드 이미지 붙여넣기]** 버튼을 클릭하면 파일 선택창 없이 즉시 들어옵니다!"
+    )
+
+    paste_result = pbutton(
+        label="📋 클립보드 이미지 붙여넣기 (클릭 1번으로 완성)",
+        text_color="#ffffff",
+        background_color="#27ae60",
+        hover_background_color="#2ecc71",
+        key="paste_image_btn",
+    )
+    if paste_result.image_data is not None:
+        pasted_image = paste_result.image_data
+        st.image(
+            pasted_image, caption="✅ 붙여넣은 이미지 미리보기", width=350
         )
-        if paste_result.image_data is not None:
-            pasted_image = paste_result.image_data
-            st.image(pasted_image, caption="✅ 붙여넣은 이미지", width=200)
+
+st.write("")
+st.markdown("### 📁 2단계: 이미지 파일 직접 올리기 (선택사항)")
+uploaded_files = st.file_uploader(
+    "PC에 저장된 이미지 파일이 있는 경우 올려주세요",
+    type=["png", "jpg", "jpeg"],
+    accept_multiple_files=True,
+)
 
 
 def parse_time_to_minutes(time_str):
@@ -106,6 +108,9 @@ st.write("---")
 if st.button("월급 계산하기", type="primary", use_container_width=True):
     images_to_process = []
 
+    if pasted_image is not None:
+        images_to_process.append(pasted_image)
+
     if uploaded_files:
         for f in uploaded_files:
             try:
@@ -113,13 +118,8 @@ if st.button("월급 계산하기", type="primary", use_container_width=True):
             except Exception:
                 pass
 
-    if pasted_image is not None:
-        images_to_process.append(pasted_image)
-
     if not images_to_process:
-        st.warning(
-            "⚠️ 분석할 이미지를 업로드하거나 Ctrl+V로 붙여넣어 주세요."
-        )
+        st.warning("⚠️ 이미지를 붙여넣거나 업로드한 후 계산 버튼을 눌러주세요.")
         st.stop()
 
     if not api_key:
