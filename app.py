@@ -36,7 +36,7 @@ JOB_DATA = {
 st.set_page_config(page_title="화성여객 월급 계산기", layout="centered")
 st.title("🚌 화성여객 자동 월급 계산기")
 
-# 사이드바 입력값 최우선, 없으면 Secrets 키 사용 (공백 자동 제거 .strip())
+# 사이드바 입력값 최우선, 없으면 Secrets 키 사용
 sidebar_key = st.sidebar.text_input("Gemini API Key 입력", type="password")
 secret_key = st.secrets.get("GEMINI_API_KEY", "")
 
@@ -90,8 +90,9 @@ if st.button("월급 계산하기") and uploaded_files:
                 ]
                 """
 
+                # 모델명을 안정적인 gemini-1.5-flash 로 수정
                 response = client.models.generate_content(
-                    model="gemini-2.5-flash", contents=[image, prompt]
+                    model="gemini-1.5-flash", contents=[image, prompt]
                 )
 
                 clean_json = (
@@ -169,6 +170,3 @@ if st.button("월급 계산하기") and uploaded_files:
 
     except Exception as e:
         st.error(f"❌ 연동 중 오류 발생: {e}")
-        st.info(
-            "복사한 API 키에 따옴표나 공백이 포함되어 있지 않은지 확인해 주세요."
-        )
